@@ -30,7 +30,7 @@ setwd(raw.dir)
 dir()
 
 # Read in metadata----
-metadata <- read_csv("2020_10_SW_Metadata.csv") %>% # read in the file
+metadata <- read_csv("metadata.csv") %>% # read in the file
   ga.clean.names() %>% # tidy the column names using GlobalArchive function 
   dplyr::select(sample, latitude, longitude, date, time, site, location, successful.count) %>% # select only these columns to keep
   mutate(sample=as.character(sample)) %>% # in this example dataset, the samples are numerical
@@ -40,12 +40,15 @@ metadata <- read_csv("2020_10_SW_Metadata.csv") %>% # read in the file
 setwd(raw.dir)
 dir()
 
-habitat <- read.delim(paste(study,"Dot Point Measurements.txt",sep = "_"),header=T,skip=4,stringsAsFactors=FALSE) %>% # read in the file
+habitat <- read.delim(paste("Dot Point Measurements.txt",sep = "_"),header=T,skip=4,stringsAsFactors=FALSE)%>% # read in the file
   ga.clean.names() %>% # tidy the column names using GlobalArchive function
-  mutate(sample=str_replace_all(.$filename,c(".png"="",".jpg"="",".JPG"=""))) %>%
+  mutate(sample=str_replace_all(.$filename,c(".png"="",".jpg"="",".JPG"="","N"="","E"="","S"="","W"=""))) %>%# remove N,E,S,W from sample
+  mutate(filename=str_replace_all(.$filename,c(".png"="",".jpg"="",".JPG"=""))) %>% #keep filename but remove .jpg (need this for later to ensure unique ID)
   mutate(sample=as.character(sample)) %>% # in this example dataset, the samples are numerical
-  select(sample,image.row,image.col,broad,morphology,type,fieldofview,relief) %>% # select only these columns to keep
+  mutate(filename=as.character(filename)) %>%
+  select(filename,sample,image.row,image.col,broad,morphology,type,fieldofview,relief) %>% # select only these columns to keep
   glimpse() # preview
+
 
 # Check number of points per image ----
 number.of.annotations<-habitat%>%
@@ -53,7 +56,7 @@ number.of.annotations<-habitat%>%
   dplyr::summarise(number.of.annotations=n()) # count the number of annotations per image
 
 wrong.number<-number.of.annotations%>%
-  filter(!number.of.annotations==40) # see images where there is too many or too little annotations (in this example there are none), go back into the *.TMObs file to fix this before re-exporting DO NOT FIX IN THE TXT FILE
+  filter(!number.of.annotations==80) # see images where there is too many or too little annotations (in this example there are none), go back into the *.TMObs file to fix this before re-exporting DO NOT FIX IN THE TXT FILE
 
 # Check that the image names match the metadata samples -----
 missing.metadata <- anti_join(habitat,metadata, by = c("sample")) # samples in habitat that don't have a match in the metadata
@@ -97,18 +100,19 @@ relief<-habitat%>%
 
 # CREATE catami_broad------
 broad<-habitat%>%
-  dplyr::select(-c(fieldofview,morphology,type,relief))%>%
+  dplyr::select(-c(morphology,type))%>%
   filter(!broad%in%c("",NA,"Unknown","Open.Water","Open Water"))%>%
   dplyr::mutate(broad=paste("broad",broad,sep = "."))%>%
   dplyr::mutate(count=1)%>%
   dplyr::group_by(sample)%>%
   tidyr::spread(key=broad,value=count,fill=0)%>%
-  dplyr::select(-c(image.row,image.col))%>%
+  dplyr::select(-c(image.row,image.col,filename,fieldofview,relief))%>%
+  dplyr::ungroup()%>%
   dplyr::group_by(sample)%>%
   dplyr::summarise_all(funs(sum))%>%
   dplyr::mutate(Total.Sum=rowSums(.[,2:(ncol(.))],na.rm = TRUE ))%>%
   dplyr::group_by(sample)%>%
-  dplyr::mutate_each(funs(./Total.Sum*100), matches("broad"))%>%  ## this errors but still seems to work
+  dplyr::mutate_each(funs(./Total.Sum*100), matches("broad"))%>%  
   dplyr::select(-Total.Sum)%>%
   dplyr::ungroup()%>%
   glimpse
@@ -139,9 +143,10 @@ setwd(tidy.dir)
 dir()
 
 habitat.broad <- metadata%>%
-  left_join(fov,by="sample")%>%
+  #left_join(fov,by="sample")%>%
   #left_join(relief,by="sample")%>%
   left_join(broad,by="sample")
+
 
 habitat.detailed <- metadata%>%
   left_join(fov,by="sample")%>%
